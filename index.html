@@ -79,7 +79,12 @@
         { key: "finance", label: "Finance (CNBC)", url: "https://www.cnbc.com/id/10000664/device/rss/rss.html" }
       ];
 
-      const ALLORIGINS_RAW = (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const PROXIES = {
+        allOriginsRaw: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        allOriginsGet: (url) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        corsproxy: (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        jina: (url) => `https://r.jina.ai/http://${url.replace(/^https?:\/\//, "")}`
+      };
 
       function parseRss(xmlText, feedKey) {
         const doc = new DOMParser().parseFromString(xmlText, "text/xml");
@@ -130,10 +135,31 @@
 
         const selectedFeed = useMemo(() => SOURCES.find(f => f.key === feedKey) || SOURCES[0], [feedKey]);
 
+        async function fetchTextViaProxies(url) {
+          const attempts = [
+            { name: "allorigins/raw", fn: () => fetch(PROXIES.allOriginsRaw(url), { cache: "no-store" }) , parse: async (r) => r.text() },
+            // allorigins/get wraps result as JSON: { contents: "..." }
+            { name: "allorigins/get", fn: () => fetch(PROXIES.allOriginsGet(url), { cache: "no-store" }) , parse: async (r) => (await r.json()).contents },
+            { name: "corsproxy.io", fn: () => fetch(PROXIES.corsproxy(url), { cache: "no-store" }) , parse: async (r) => r.text() }
+          ];
+
+          let lastErr = null;
+          for (const a of attempts) {
+            try {
+              const res = await a.fn();
+              if (!res.ok) throw new Error(`${a.name}: ${res.status}`);
+              const text = await a.parse(res);
+              if (text && text.length > 0) return text;
+              throw new Error(`${a.name}: empty response`);
+            } catch (e) {
+              lastErr = e;
+            }
+          }
+          throw lastErr || new Error("All proxies failed");
+        }
+
         async function loadOne(source) {
-          const res = await fetch(ALLORIGINS_RAW(source.url), { cache: "no-store" });
-          if (!res.ok) throw new Error(`${source.label}: fetch failed (${res.status})`);
-          const xml = await res.text();
+          const xml = await fetchTextViaProxies(source.url);
           const parsed = parseRss(xml, source.key)
             .sort((a, b) => (new Date(b.pubDate).getTime() || 0) - (new Date(a.pubDate).getTime() || 0))
             .slice(0, 5);
