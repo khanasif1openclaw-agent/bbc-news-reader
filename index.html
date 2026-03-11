@@ -71,16 +71,11 @@
       import SearchIcon from "@mui/icons-material/Search";
       import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 
-      const FEEDS = [
-        { key: "top", label: "Top Stories", url: "https://feeds.bbci.co.uk/news/rss.xml" },
-        { key: "world", label: "World", url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
-        { key: "uk", label: "UK", url: "https://feeds.bbci.co.uk/news/uk/rss.xml" },
-        { key: "business", label: "Business", url: "https://feeds.bbci.co.uk/news/business/rss.xml" },
-        { key: "tech", label: "Technology", url: "https://feeds.bbci.co.uk/news/technology/rss.xml" },
-        { key: "science", label: "Science & Environment", url: "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml" },
-        { key: "health", label: "Health", url: "https://feeds.bbci.co.uk/news/health/rss.xml" },
-        { key: "ent", label: "Entertainment & Arts", url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml" },
-        { key: "sport", label: "Sport", url: "https://feeds.bbci.co.uk/sport/rss.xml" }
+      const SOURCES = [
+        { key: "bbc", label: "BBC News", url: "https://feeds.bbci.co.uk/news/rss.xml" },
+        { key: "tc", label: "TechCrunch", url: "https://techcrunch.com/feed/" },
+        { key: "crypto", label: "Crypto (CoinDesk)", url: "https://www.coindesk.com/arc/outboundfeeds/rss/" },
+        { key: "finance", label: "Finance (CNBC)", url: "https://www.cnbc.com/id/10000664/device/rss/rss.html" }
       ];
 
       const ALLORIGINS_RAW = (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
@@ -125,14 +120,14 @@
       });
 
       function App() {
-        const [feedKey, setFeedKey] = useState("top");
+        const [feedKey, setFeedKey] = useState("bbc");
         const [query, setQuery] = useState("");
         const [loading, setLoading] = useState(false);
         const [error, setError] = useState("");
         const [items, setItems] = useState([]);
         const [lastUpdated, setLastUpdated] = useState(null);
 
-        const selectedFeed = useMemo(() => FEEDS.find(f => f.key === feedKey) || FEEDS[0], [feedKey]);
+        const selectedFeed = useMemo(() => SOURCES.find(f => f.key === feedKey) || SOURCES[0], [feedKey]);
 
         async function load() {
           setLoading(true);
@@ -176,7 +171,7 @@
                     onChange: (e) => setFeedKey(e.target.value),
                     sx: { color: "white", ".MuiSelect-icon": { color: "white" } }
                   },
-                    FEEDS.map(f => React.createElement(MenuItem, { key: f.key, value: f.key }, f.label))
+                    SOURCES.map(f => React.createElement(MenuItem, { key: f.key, value: f.key }, f.label))
                   )
                 ),
 
