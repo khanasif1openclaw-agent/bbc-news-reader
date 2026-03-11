@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BBC News Reader (Unofficial)</title>
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      html, body { height: 100%; margin: 0; }
+      #root { min-height: 100%; }
+      .muted { opacity: 0.75; }
+      a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Import maps so we can use modern ESM directly in the browser -->
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.3.1",
+          "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+
+          "@emotion/react": "https://esm.sh/@emotion/react@11.11.4",
+          "@emotion/styled": "https://esm.sh/@emotion/styled@11.11.5",
+
+          "@mui/material": "https://esm.sh/@mui/material@5.15.20?deps=react@18.3.1",
+          "@mui/material/styles": "https://esm.sh/@mui/material@5.15.20/styles?deps=react@18.3.1",
+          "@mui/icons-material": "https://esm.sh/@mui/icons-material@5.15.20?deps=react@18.3.1",
+
+          "@mui/lab": "https://esm.sh/@mui/lab@5.0.0-alpha.170?deps=react@18.3.1"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import React, { useEffect, useMemo, useState } from "react";
+      import { createRoot } from "react-dom/client";
+
+      import {
+        AppBar,
+        Box,
+        Button,
+        Card,
+        CardActionArea,
+        CardContent,
+        Chip,
+        CircularProgress,
+        Container,
+        CssBaseline,
+        Divider,
+        FormControl,
+        IconButton,
+        InputAdornment,
+        Link,
+        MenuItem,
+        Select,
+        Stack,
+        TextField,
+        Toolbar,
+        Tooltip,
+        Typography
+      } from "@mui/material";
+
+      import { createTheme, ThemeProvider } from "@mui/material/styles";
+      import RefreshIcon from "@mui/icons-material/Refresh";
+      import SearchIcon from "@mui/icons-material/Search";
+      import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+
+      const FEEDS = [
+        { key: "top", label: "Top Stories", url: "https://feeds.bbci.co.uk/news/rss.xml" },
+        { key: "world", label: "World", url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
+        { key: "uk", label: "UK", url: "https://feeds.bbci.co.uk/news/uk/rss.xml" },
+        { key: "business", label: "Business", url: "https://feeds.bbci.co.uk/news/business/rss.xml" },
+        { key: "tech", label: "Technology", url: "https://feeds.bbci.co.uk/news/technology/rss.xml" },
+        { key: "science", label: "Science & Environment", url: "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml" },
+        { key: "health", label: "Health", url: "https://feeds.bbci.co.uk/news/health/rss.xml" },
+        { key: "ent", label: "Entertainment & Arts", url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml" },
+        { key: "sport", label: "Sport", url: "https://feeds.bbci.co.uk/sport/rss.xml" }
+      ];
+
+      const ALLORIGINS_RAW = (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+
+      function parseRss(xmlText, feedKey) {
+        const doc = new DOMParser().parseFromString(xmlText, "text/xml");
+        const items = Array.from(doc.querySelectorAll("item"));
+        return items.map((item) => {
+          const title = item.querySelector("title")?.textContent?.trim() || "";
+          const link = item.querySelector("link")?.textContent?.trim() || "";
+          const pubDate = item.querySelector("pubDate")?.textContent?.trim() || "";
+          const description = item.querySelector("description")?.textContent?.trim() || "";
+          // Some BBC feeds include media:thumbnail or media:content
+          const thumb = item.querySelector("thumbnail, media\\:thumbnail")?.getAttribute("url")
+            || item.querySelector("media\\:content")?.getAttribute("url")
+            || "";
+
+          return {
+            id: `${feedKey}::${link}`,
+            feedKey,
+            title,
+            link,
+            pubDate,
+            description,
+            thumb
+          };
+        });
+      }
+
+      function stripHtml(html) {
+        const div = document.createElement("div");
+        div.innerHTML = html;
+        return (div.textContent || div.innerText || "").trim();
+      }
+
+      const theme = createTheme({
+        palette: {
+          mode: "light",
+          primary: { main: "#b80000" }
+        },
+        shape: { borderRadius: 14 }
+      });
+
+      function App() {
+        const [feedKey, setFeedKey] = useState("top");
+        const [query, setQuery] = useState("");
+        const [loading, setLoading] = useState(false);
+        const [error, setError] = useState("");
+        const [items, setItems] = useState([]);
+        const [lastUpdated, setLastUpdated] = useState(null);
+
+        const selectedFeed = useMemo(() => FEEDS.find(f => f.key === feedKey) || FEEDS[0], [feedKey]);
+
+        async function load() {
+          setLoading(true);
+          setError("");
+          try {
+            const res = await fetch(ALLORIGINS_RAW(selectedFeed.url), { cache: "no-store" });
+            if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+            const xml = await res.text();
+            const parsed = parseRss(xml, selectedFeed.key);
+            setItems(parsed);
+            setLastUpdated(new Date());
+          } catch (e) {
+            setError(String(e?.message || e));
+          } finally {
+            setLoading(false);
+          }
+        }
+
+        useEffect(() => { load(); }, [feedKey]);
+
+        const filtered = useMemo(() => {
+          const q = query.trim().toLowerCase();
+          if (!q) return items;
+          return items.filter(it => (it.title + " " + stripHtml(it.description)).toLowerCase().includes(q));
+        }, [items, query]);
+
+        return (
+          React.createElement(ThemeProvider, { theme },
+            React.createElement(CssBaseline, null),
+
+            React.createElement(AppBar, { position: "sticky", elevation: 0 },
+              React.createElement(Toolbar, { sx: { gap: 2, flexWrap: "wrap" } },
+                React.createElement(Typography, { variant: "h6", sx: { fontWeight: 800 } }, "BBC News Reader"),
+                React.createElement(Chip, { size: "small", label: "Unofficial", variant: "outlined", sx: { color: "rgba(255,255,255,.85)", borderColor: "rgba(255,255,255,.35)" } }),
+
+                React.createElement(Box, { sx: { flex: 1 } }),
+
+                React.createElement(FormControl, { size: "small", sx: { minWidth: 200, bgcolor: "rgba(255,255,255,.10)", borderRadius: 2 } },
+                  React.createElement(Select, {
+                    value: feedKey,
+                    onChange: (e) => setFeedKey(e.target.value),
+                    sx: { color: "white", ".MuiSelect-icon": { color: "white" } }
+                  },
+                    FEEDS.map(f => React.createElement(MenuItem, { key: f.key, value: f.key }, f.label))
+                  )
+                ),
+
+                React.createElement(TextField, {
+                  value: query,
+                  onChange: (e) => setQuery(e.target.value),
+                  size: "small",
+                  placeholder: "Search headlines…",
+                  sx: { minWidth: 260, bgcolor: "rgba(255,255,255,.10)", borderRadius: 2, input: { color: "white" } },
+                  InputProps: {
+                    startAdornment: React.createElement(InputAdornment, { position: "start" }, React.createElement(SearchIcon, { sx: { color: "white" } })),
+                  }
+                }),
+
+                React.createElement(Tooltip, { title: "Refresh" },
+                  React.createElement(IconButton, { color: "inherit", onClick: load, disabled: loading },
+                    React.createElement(RefreshIcon, null)
+                  )
+                )
+              )
+            ),
+
+            React.createElement(Container, { maxWidth: "md", sx: { py: 3 } },
+              React.createElement(Stack, { direction: "row", spacing: 1, alignItems: "center", sx: { mb: 2, flexWrap: "wrap" } },
+                React.createElement(Typography, { variant: "subtitle1", sx: { fontWeight: 700 } }, selectedFeed.label),
+                lastUpdated && React.createElement(Typography, { variant: "body2", className: "muted" }, `Updated ${lastUpdated.toLocaleString()}`),
+                React.createElement(Box, { sx: { flex: 1 } }),
+                React.createElement(Button, {
+                  variant: "outlined",
+                  size: "small",
+                  href: selectedFeed.url,
+                  target: "_blank",
+                  rel: "noreferrer",
+                  endIcon: React.createElement(OpenInNewIcon, null)
+                }, "RSS")
+              ),
+
+              error && React.createElement(Card, { sx: { mb: 2, border: "1px solid", borderColor: "error.light" } },
+                React.createElement(CardContent, null,
+                  React.createElement(Typography, { color: "error", sx: { fontWeight: 700 } }, "Couldn’t load this feed"),
+                  React.createElement(Typography, { variant: "body2" }, error),
+                  React.createElement(Typography, { variant: "body2", className: "muted", sx: { mt: 1 } },
+                    "Tip: This page uses a public CORS proxy (allorigins.win). If it’s down, the feed won’t load."
+                  )
+                )
+              ),
+
+              loading && React.createElement(Stack, { direction: "row", spacing: 2, alignItems: "center", sx: { py: 2 } },
+                React.createElement(CircularProgress, { size: 20 }),
+                React.createElement(Typography, { className: "muted" }, "Loading…")
+              ),
+
+              React.createElement(Stack, { spacing: 1.5 },
+                filtered.map((it) => (
+                  React.createElement(Card, { key: it.id, variant: "outlined" },
+                    React.createElement(CardActionArea, { component: "a", href: it.link, target: "_blank", rel: "noreferrer" },
+                      React.createElement(CardContent, null,
+                        React.createElement(Stack, { spacing: 0.5 },
+                          React.createElement(Typography, { variant: "h6", sx: { fontWeight: 800, lineHeight: 1.2 } }, it.title),
+                          it.pubDate && React.createElement(Typography, { variant: "caption", className: "muted" }, new Date(it.pubDate).toLocaleString()),
+                          it.description && React.createElement(Typography, { variant: "body2" }, stripHtml(it.description))
+                        )
+                      )
+                    )
+                  )
+                ))
+              ),
+
+              React.createElement(Divider, { sx: { my: 3 } }),
+              React.createElement(Typography, { variant: "body2", className: "muted" },
+                "Notes: This is an unofficial reader built on BBC RSS feeds. Click an item to open on bbc.com."
+              )
+            )
+          )
+        );
+      }
+
+      createRoot(document.getElementById("root")).render(React.createElement(App));
+    </script>
+  </body>
+</html>
