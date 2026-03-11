@@ -72,6 +72,7 @@
       import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 
       const SOURCES = [
+        { key: "all", label: "All (Top 5 each)", url: "" },
         { key: "bbc", label: "BBC News", url: "https://feeds.bbci.co.uk/news/rss.xml" },
         { key: "tc", label: "TechCrunch", url: "https://techcrunch.com/feed/" },
         { key: "crypto", label: "Crypto (CoinDesk)", url: "https://www.coindesk.com/arc/outboundfeeds/rss/" },
@@ -120,7 +121,7 @@
       });
 
       function App() {
-        const [feedKey, setFeedKey] = useState("bbc");
+        const [feedKey, setFeedKey] = useState("all");
         const [query, setQuery] = useState("");
         const [loading, setLoading] = useState(false);
         const [error, setError] = useState("");
@@ -129,15 +130,30 @@
 
         const selectedFeed = useMemo(() => SOURCES.find(f => f.key === feedKey) || SOURCES[0], [feedKey]);
 
+        async function loadOne(source) {
+          const res = await fetch(ALLORIGINS_RAW(source.url), { cache: "no-store" });
+          if (!res.ok) throw new Error(`${source.label}: fetch failed (${res.status})`);
+          const xml = await res.text();
+          const parsed = parseRss(xml, source.key)
+            .sort((a, b) => (new Date(b.pubDate).getTime() || 0) - (new Date(a.pubDate).getTime() || 0))
+            .slice(0, 5);
+          return { source, items: parsed };
+        }
+
         async function load() {
           setLoading(true);
           setError("");
           try {
-            const res = await fetch(ALLORIGINS_RAW(selectedFeed.url), { cache: "no-store" });
-            if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-            const xml = await res.text();
-            const parsed = parseRss(xml, selectedFeed.key);
-            setItems(parsed);
+            if (feedKey === "all") {
+              const results = await Promise.allSettled(SOURCES.filter(s => s.key !== "all").map(loadOne));
+              const ok = results.filter(r => r.status === "fulfilled").map(r => r.value);
+              const flat = ok.flatMap(r => r.items.map(it => ({...it, sourceLabel: r.source.label })));
+              setItems(flat);
+            } else {
+              const source = SOURCES.find(s => s.key === feedKey) || SOURCES[0];
+              const { items } = await loadOne(source);
+              setItems(items.map(it => ({...it, sourceLabel: source.label })));
+            }
             setLastUpdated(new Date());
           } catch (e) {
             setError(String(e?.message || e));
@@ -229,8 +245,11 @@
                   React.createElement(Card, { key: it.id, variant: "outlined" },
                     React.createElement(CardActionArea, { component: "a", href: it.link, target: "_blank", rel: "noreferrer" },
                       React.createElement(CardContent, null,
-                        React.createElement(Stack, { spacing: 0.5 },
-                          React.createElement(Typography, { variant: "h6", sx: { fontWeight: 800, lineHeight: 1.2 } }, it.title),
+                        React.createElement(Stack, { spacing: 0.75 },
+                          React.createElement(Stack, { direction: "row", spacing: 1, alignItems: "center", sx: { flexWrap: "wrap" } },
+                            React.createElement(Typography, { variant: "h6", sx: { fontWeight: 800, lineHeight: 1.2 } }, it.title),
+                            it.sourceLabel && React.createElement(Chip, { size: "small", label: it.sourceLabel, variant: "outlined" })
+                          ),
                           it.pubDate && React.createElement(Typography, { variant: "caption", className: "muted" }, new Date(it.pubDate).toLocaleString()),
                           it.description && React.createElement(Typography, { variant: "body2" }, stripHtml(it.description))
                         )
